@@ -9,10 +9,10 @@ const colors = [
   "#39bbb0"
 ];
 
-export function getAvatarColor(name) {
+export function getAvatarColor(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i += 1) {
     hash = 31 * hash + name.charCodeAt(i);
   }
-  return colors[Math.abs(hash % colors.length)];
+  return colors[Math.abs(hash % colors.length)]!;
 }

@@ -1,8 +1,10 @@
-export default function LoginScreen({
-  onSignIn,
-  connectingText,
-  errorText
-}) {
+interface LoginScreenProps {
+  onSignIn: () => void;
+  connectingText: string;
+  errorText: string;
+}
+
+export default function LoginScreen({ onSignIn, connectingText, errorText }: LoginScreenProps) {
   return (
     <div id="username-page">
       <div className="username-page-container">

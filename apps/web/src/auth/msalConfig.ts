@@ -1,4 +1,4 @@
-import { PublicClientApplication } from "@azure/msal-browser";
+import { PublicClientApplication, type Configuration, type RedirectRequest } from "@azure/msal-browser";
 
 const tenantId = process.env.NEXT_PUBLIC_ENTRA_TENANT_ID || "";
 const clientId = process.env.NEXT_PUBLIC_ENTRA_CLIENT_ID || "";
@@ -8,7 +8,7 @@ const authority =
 
 export const apiScope = process.env.NEXT_PUBLIC_CHAT_API_SCOPE || "";
 
-export const msalConfig = {
+export const msalConfig: Configuration = {
   auth: {
     clientId,
     authority,
@@ -19,7 +19,7 @@ export const msalConfig = {
   }
 };
 
-export const loginRequest = {
+export const loginRequest: RedirectRequest = {
   scopes: apiScope ? [apiScope] : []
 };
 

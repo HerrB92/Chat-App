@@ -1,24 +1,94 @@
-const { DefaultAzureCredential } = require("@azure/identity");
-const { SecretClient } = require("@azure/keyvault-secrets");
+import { DefaultAzureCredential } from "@azure/identity";
+import { SecretClient } from "@azure/keyvault-secrets";
+import logger from "../logger";
 
-function parseBoolean(value, fallback = false) {
+interface SecretSpec {
+  targetEnv: string;
+  secretName: string;
+}
+
+interface SecretCacheEntry {
+  value: string;
+  expiresAt: number;
+}
+
+interface SecretCache {
+  getOrLoad(
+    secretName: string,
+    loader: (name: string) => Promise<string>
+  ): Promise<{ value: string; source: string }>;
+  set(secretName: string, value: string): void;
+}
+
+interface FetchedSecret {
+  targetEnv: string;
+  secretName: string;
+  source: string;
+}
+
+interface KeyVaultEnabled {
+  keyVaultEnabled: true;
+  keyVaultUri: string;
+  fetched: FetchedSecret[];
+  cache: SecretCache;
+  refreshIntervalSeconds: number;
+  client: SecretClient;
+  mode: "key_vault";
+}
+
+interface KeyVaultDisabled {
+  keyVaultEnabled: false;
+  keyVaultUri: string;
+  fetched: FetchedSecret[];
+  cache: null;
+  refreshIntervalSeconds: number;
+  mode: "env" | "env_fallback";
+}
+
+type RuntimeSecrets = KeyVaultEnabled | KeyVaultDisabled;
+
+export interface CosmosConfig {
+  connectionString: string | undefined;
+  endpoint: string | undefined;
+  key: string | undefined;
+  databaseId: string;
+  messagesContainerId: string;
+  usersContainerId: string;
+  roomsContainerId: string;
+  membershipsContainerId: string;
+}
+
+export interface RuntimeConfig {
+  port: number;
+  webOrigin: string;
+  authMode: string;
+  cosmos: CosmosConfig;
+  keyVault: {
+    enabled: boolean;
+    uri: string;
+    fetched: FetchedSecret[];
+    mode: string;
+  };
+}
+
+function parseBoolean(value: string | undefined, fallback = false): boolean {
   if (value == null || value === "") {
     return fallback;
   }
   return String(value).trim().toLowerCase() === "true";
 }
 
-function parseIntOrDefault(value, fallback) {
+function parseIntOrDefault(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(String(value || ""), 10);
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
-function isProductionLike() {
+function isProductionLike(): boolean {
   const nodeEnv = String(process.env.NODE_ENV || "").trim().toLowerCase();
   return nodeEnv === "production";
 }
 
-function shouldEnableKeyVault() {
+function shouldEnableKeyVault(): boolean {
   const raw = process.env.KEY_VAULT_ENABLED;
   if (raw == null || raw === "") {
     return isProductionLike() && Boolean(String(process.env.KEY_VAULT_URI || "").trim());
@@ -26,7 +96,7 @@ function shouldEnableKeyVault() {
   return parseBoolean(raw, false);
 }
 
-function shouldAllowLocalFallbackOnKeyVaultError() {
+function shouldAllowLocalFallbackOnKeyVaultError(): boolean {
   const raw = process.env.KEY_VAULT_ALLOW_LOCAL_FALLBACK;
   if (raw == null || raw === "") {
     return !isProductionLike();
@@ -34,7 +104,7 @@ function shouldAllowLocalFallbackOnKeyVaultError() {
   return parseBoolean(raw, !isProductionLike());
 }
 
-function buildSecretSpec() {
+function buildSecretSpec(): SecretSpec[] {
   return [
     {
       targetEnv: "COSMOS_CONNECTION_STRING",
@@ -67,11 +137,14 @@ function buildSecretSpec() {
   ].filter((entry) => entry.secretName);
 }
 
-function createSecretCache({ ttlSeconds }) {
-  const cache = new Map();
+function createSecretCache({ ttlSeconds }: { ttlSeconds: number }): SecretCache {
+  const cache = new Map<string, SecretCacheEntry>();
   const ttlMs = Math.max(ttlSeconds, 0) * 1000;
   return {
-    async getOrLoad(secretName, loader) {
+    async getOrLoad(
+      secretName: string,
+      loader: (name: string) => Promise<string>
+    ): Promise<{ value: string; source: string }> {
       const now = Date.now();
       const cached = cache.get(secretName);
       if (cached && cached.expiresAt > now) {
@@ -81,13 +154,13 @@ function createSecretCache({ ttlSeconds }) {
       cache.set(secretName, { value, expiresAt: now + ttlMs });
       return { value, source: "key_vault" };
     },
-    set(secretName, value) {
+    set(secretName: string, value: string): void {
       cache.set(secretName, { value, expiresAt: Date.now() + ttlMs });
     }
   };
 }
 
-function buildConfigSnapshot() {
+function buildConfigSnapshot(): Omit<RuntimeConfig, "keyVault"> {
   return {
     port: Number.parseInt(process.env.CHAT_API_PORT || "3001", 10),
     webOrigin: process.env.WEB_ORIGIN || "http://localhost:3000",
@@ -105,7 +178,10 @@ function buildConfigSnapshot() {
   };
 }
 
-function validateConfig(config, { keyVaultEnabled }) {
+function validateConfig(
+  config: Omit<RuntimeConfig, "keyVault">,
+  { keyVaultEnabled }: { keyVaultEnabled: boolean }
+): void {
   const hasConnectionString = Boolean(String(config.cosmos.connectionString || "").trim());
   const hasEndpoint = Boolean(String(config.cosmos.endpoint || "").trim());
   const hasKey = Boolean(String(config.cosmos.key || "").trim());
@@ -117,7 +193,7 @@ function validateConfig(config, { keyVaultEnabled }) {
   }
 }
 
-async function hydrateFromKeyVault() {
+async function hydrateFromKeyVault(): Promise<RuntimeSecrets> {
   const keyVaultEnabled = shouldEnableKeyVault();
   const allowLocalFallback = shouldAllowLocalFallbackOnKeyVaultError();
   const keyVaultUri = String(process.env.KEY_VAULT_URI || "").trim();
@@ -137,14 +213,17 @@ async function hydrateFromKeyVault() {
   }
 
   const cacheTtlSeconds = parseIntOrDefault(process.env.KEY_VAULT_CACHE_TTL_SECONDS, 300);
-  const refreshIntervalSeconds = parseIntOrDefault(process.env.KEY_VAULT_REFRESH_INTERVAL_SECONDS, 0);
+  const refreshIntervalSeconds = parseIntOrDefault(
+    process.env.KEY_VAULT_REFRESH_INTERVAL_SECONDS,
+    0
+  );
   const secretSpec = buildSecretSpec();
   const credential = new DefaultAzureCredential();
   const client = new SecretClient(keyVaultUri, credential);
   const cache = createSecretCache({ ttlSeconds: cacheTtlSeconds });
-  const fetched = [];
+  const fetched: FetchedSecret[] = [];
 
-  const loadSecretValue = async (secretName) => {
+  const loadSecretValue = async (secretName: string): Promise<string> => {
     const response = await client.getSecret(secretName);
     if (!response || typeof response.value !== "string" || !response.value.trim()) {
       throw new Error(`Key Vault secret "${secretName}" is empty or missing a value.`);
@@ -166,13 +245,10 @@ async function hydrateFromKeyVault() {
     if (!allowLocalFallback) {
       throw error;
     }
-    // eslint-disable-next-line no-console
-    console.warn(
-      "Key Vault resolution failed; falling back to local env values. " +
-        "Set KEY_VAULT_ALLOW_LOCAL_FALLBACK=false to enforce fail-fast."
+    logger.warn(
+      { reason: (error as Error).message },
+      "Key Vault resolution failed; falling back to local env values. Set KEY_VAULT_ALLOW_LOCAL_FALLBACK=false to enforce fail-fast."
     );
-    // eslint-disable-next-line no-console
-    console.warn(`Key Vault fallback reason: ${error.message}`);
     return {
       keyVaultEnabled: false,
       keyVaultUri: "",
@@ -194,8 +270,8 @@ async function hydrateFromKeyVault() {
   };
 }
 
-function startRefreshLoop(runtimeSecrets) {
-  if (!runtimeSecrets?.keyVaultEnabled) {
+function startRefreshLoop(runtimeSecrets: RuntimeSecrets): NodeJS.Timeout | null {
+  if (!runtimeSecrets.keyVaultEnabled) {
     return null;
   }
 
@@ -213,11 +289,9 @@ function startRefreshLoop(runtimeSecrets) {
           process.env[fetched.targetEnv] = response.value;
         }
       }
-      // eslint-disable-next-line no-console
-      console.log("Key Vault refresh completed. Restart service to guarantee all clients use updated secrets.");
+      logger.info("Key Vault refresh completed. Restart service to guarantee all clients use updated secrets.");
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("Key Vault refresh failed:", error.message);
+      logger.error({ err: error }, "Key Vault refresh failed");
     }
   }, intervalSeconds * 1000);
 
@@ -225,7 +299,7 @@ function startRefreshLoop(runtimeSecrets) {
   return interval;
 }
 
-async function loadRuntimeConfig() {
+export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
   const runtimeSecrets = await hydrateFromKeyVault();
   const config = buildConfigSnapshot();
   validateConfig(config, { keyVaultEnabled: runtimeSecrets.keyVaultEnabled });
@@ -241,7 +315,3 @@ async function loadRuntimeConfig() {
     }
   };
 }
-
-module.exports = {
-  loadRuntimeConfig
-};
