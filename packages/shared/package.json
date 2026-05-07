@@ -2,5 +2,8 @@
   "name": "@chat-app/shared",
   "private": true,
   "version": "1.0.0",
-  "main": "src/chatTypes.js"
+  "main": "src/chatTypes.ts",
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
 }

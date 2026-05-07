@@ -1,3 +1,16 @@
+import type { ConversationEntry } from "../state/selectors";
+
+interface ConversationListProps {
+  searchTerm: string;
+  onSearchTermChange: (value: string) => void;
+  conversations: ConversationEntry[];
+  activeChat: string;
+  onOpenConversation: (entry: ConversationEntry) => void;
+  unreadByUserId: Record<string, number>;
+  getAvatarColor: (name: string) => string;
+  formatTime: (isoDate: string) => string;
+}
+
 export default function ConversationList({
   searchTerm,
   onSearchTermChange,
@@ -7,7 +20,7 @@ export default function ConversationList({
   unreadByUserId,
   getAvatarColor,
   formatTime
-}) {
+}: ConversationListProps) {
   return (
     <aside className="middle-sidebar">
       <div className="search-wrap">
@@ -39,7 +52,7 @@ export default function ConversationList({
                 </div>
                 <div className="chat-meta-bottom">
                   <span className="chat-preview">{entry.lastMessage}</span>
-                  {unreadByUserId[entry.userId] > 0 && (
+                  {(unreadByUserId[entry.userId] ?? 0) > 0 && (
                     <span className="unread-badge">{unreadByUserId[entry.userId]}</span>
                   )}
                 </div>

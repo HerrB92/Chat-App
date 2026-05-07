@@ -1,16 +1,33 @@
-const jwt = require("jsonwebtoken");
-const jwksClient = require("jwks-rsa");
+import jwt, { JwtHeader, SigningKeyCallback, JwtPayload } from "jsonwebtoken";
+import jwksClient from "jwks-rsa";
+import type { Request, Response, NextFunction } from "express";
+import type { Socket } from "socket.io";
+import type { NormalizedClaims } from "../types";
 
-function buildVerifierConfig() {
+interface VerifierConfig {
+  tenantId: string;
+  issuers: string[];
+  audience: string;
+  jwksUri: string;
+}
+
+interface VerifierContext {
+  config: VerifierConfig;
+  client: ReturnType<typeof jwksClient>;
+}
+
+function buildVerifierConfig(): VerifierConfig {
   const tenantId = process.env.ENTRA_TENANT_ID || "";
   const explicitIssuer = process.env.ENTRA_ISSUER || "";
-  const defaultIssuers = tenantId
+  const defaultIssuers: [string, ...string[]] | [] = tenantId
     ? [
         `https://login.microsoftonline.com/${tenantId}/v2.0`,
         `https://sts.windows.net/${tenantId}/`
       ]
     : [];
-  const issuers = explicitIssuer ? [explicitIssuer] : defaultIssuers;
+  const issuers: [string, ...string[]] | [] = explicitIssuer
+    ? [explicitIssuer]
+    : defaultIssuers;
   const audience = process.env.ENTRA_AUDIENCE || "";
   const jwksUri =
     process.env.ENTRA_JWKS_URI ||
@@ -21,10 +38,10 @@ function buildVerifierConfig() {
   return { tenantId, issuers, audience, jwksUri };
 }
 
-let verifierContext = null;
+let verifierContext: VerifierContext | null = null;
 let verifierContextKey = "";
 
-function getVerifierContext() {
+function getVerifierContext(): VerifierContext {
   const config = buildVerifierConfig();
   const contextKey = JSON.stringify(config);
   if (verifierContext && verifierContextKey === contextKey) {
@@ -46,27 +63,38 @@ function getVerifierContext() {
   return verifierContext;
 }
 
-function getSigningKey(client, header, callback) {
-  client.getSigningKey(header.kid, (err, key) => {
+function getSigningKey(
+  client: ReturnType<typeof jwksClient>,
+  header: JwtHeader,
+  callback: SigningKeyCallback
+): void {
+  client.getSigningKey(header.kid as string, (err, key) => {
     if (err) {
       callback(err);
       return;
     }
-    callback(null, key.getPublicKey());
+    callback(null, key!.getPublicKey());
   });
 }
 
-function normalizeClaims(claims) {
+function normalizeClaims(claims: JwtPayload): NormalizedClaims {
   return {
-    oid: claims.oid,
-    tid: claims.tid,
-    name: claims.name || claims.preferred_username || claims.upn || claims.oid,
-    preferredUsername: claims.preferred_username || claims.upn || "",
-    roles: Array.isArray(claims.roles) ? claims.roles : []
+    oid: claims["oid"] as string,
+    tid: claims["tid"] as string,
+    name:
+      (claims["name"] as string) ||
+      (claims["preferred_username"] as string) ||
+      (claims["upn"] as string) ||
+      (claims["oid"] as string),
+    preferredUsername:
+      (claims["preferred_username"] as string) ||
+      (claims["upn"] as string) ||
+      "",
+    roles: Array.isArray(claims["roles"]) ? (claims["roles"] as string[]) : []
   };
 }
 
-function verifyAccessToken(token) {
+export function verifyAccessToken(token: string): Promise<NormalizedClaims> {
   const context = getVerifierContext();
   const verifierConfig = context.config;
 
@@ -80,32 +108,37 @@ function verifyAccessToken(token) {
       (header, callback) => getSigningKey(context.client, header, callback),
       {
         algorithms: ["RS256"],
-        issuer: verifierConfig.issuers,
+        issuer: verifierConfig.issuers as [string, ...string[]],
         audience: verifierConfig.audience
       },
-      (err, decoded) => {
+      (err: jwt.VerifyErrors | null, decoded: jwt.JwtPayload | string | undefined) => {
         if (err) {
           reject(err);
           return;
         }
 
-        if (!decoded?.oid) {
+        const payload = decoded as JwtPayload;
+        if (!payload?.["oid"]) {
           reject(new Error("Token is missing oid claim."));
           return;
         }
 
-        if (decoded.tid !== verifierConfig.tenantId) {
+        if (payload["tid"] !== verifierConfig.tenantId) {
           reject(new Error("Token tenant mismatch."));
           return;
         }
 
-        resolve(normalizeClaims(decoded));
+        resolve(normalizeClaims(payload));
       }
     );
   });
 }
 
-async function authenticateExpress(req, res, next) {
+export async function authenticateExpress(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
   try {
     const authHeader = String(req.headers.authorization || "").trim();
     const [scheme, ...rest] = authHeader.split(/\s+/);
@@ -117,14 +150,17 @@ async function authenticateExpress(req, res, next) {
 
     req.auth = await verifyAccessToken(token);
     next();
-  } catch (error) {
+  } catch (_error) {
     res.status(401).json({ ok: false, error: "Invalid bearer token." });
   }
 }
 
-async function authenticateSocket(socket, next) {
+export async function authenticateSocket(
+  socket: Socket,
+  next: (err?: Error) => void
+): Promise<void> {
   try {
-    const token = String(socket.handshake.auth?.token || "").trim();
+    const token = String((socket.handshake.auth as Record<string, unknown>)?.token || "").trim();
     if (!token) {
       next(new Error("Missing bearer token."));
       return;
@@ -135,9 +171,3 @@ async function authenticateSocket(socket, next) {
     next(new Error("Invalid bearer token."));
   }
 }
-
-module.exports = {
-  verifyAccessToken,
-  authenticateExpress,
-  authenticateSocket
-};

@@ -1,9 +1,11 @@
 const { spawn } = require("child_process");
 
+// Resolve the npm binary without shell interpolation (avoids DEP0190 in Node 24)
+const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+
 function run(name, args) {
-  const child = spawn("npm", args, {
+  const child = spawn(npm, args, {
     stdio: "inherit",
-    shell: true,
     env: process.env
   });
 

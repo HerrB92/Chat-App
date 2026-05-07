@@ -3,16 +3,24 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "dev": "node ../../node_modules/next/dist/bin/next dev -p 3000",
+    "dev": "WATCHPACK_POLLING=true node ../../node_modules/next/dist/bin/next dev -p 3000",
     "build": "node ../../node_modules/next/dist/bin/next build",
     "start": "node ../../node_modules/next/dist/bin/next start -p 3000"
   },
   "dependencies": {
-    "@azure/msal-browser": "3.27.0",
-    "@azure/msal-react": "2.1.1",
-    "next": "14.2.5",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "socket.io-client": "4.8.1"
+    "@azure/msal-browser": "5.6.2",
+    "@azure/msal-react": "5.2.0",
+    "@chat-app/shared": "*",
+    "next": "16.2.2",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "socket.io-client": "4.8.3",
+    "socket.io-parser": "^4.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.5.4"
   }
 }
