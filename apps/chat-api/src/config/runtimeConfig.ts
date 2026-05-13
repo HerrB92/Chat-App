@@ -184,11 +184,10 @@ function validateConfig(
 ): void {
   const hasConnectionString = Boolean(String(config.cosmos.connectionString || "").trim());
   const hasEndpoint = Boolean(String(config.cosmos.endpoint || "").trim());
-  const hasKey = Boolean(String(config.cosmos.key || "").trim());
-  if (!hasConnectionString && !(hasEndpoint && hasKey)) {
+  if (!hasConnectionString && !hasEndpoint) {
     const mode = keyVaultEnabled ? "Key Vault + env" : "env";
     throw new Error(
-      `Cosmos configuration missing after ${mode} resolution. Set COSMOS_CONNECTION_STRING or COSMOS_ENDPOINT + COSMOS_KEY.`
+      `Cosmos configuration missing after ${mode} resolution. Set COSMOS_CONNECTION_STRING or COSMOS_ENDPOINT (with COSMOS_KEY for key-based auth, or without for Managed Identity).`
     );
   }
 }

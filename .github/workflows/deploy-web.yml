@@ -1,0 +1,178 @@
+name: Deploy chat-web
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'Dockerfile.web'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ziel-Umgebung'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, test, prod]
+
+permissions:
+  id-token: write
+  contents: read
+
+# WICHTIG: NEXT_PUBLIC_* Variablen werden zur Build-Zeit eingebrannt.
+# Pro Umgebung wird ein separates Image gebaut (jeweils mit den richtigen URLs).
+# Das ist eine Next.js-Eigenschaft und kein Fehler im Setup.
+
+jobs:
+  build-dev:
+    name: Build Image (Dev)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Bei ACR anmelden
+        run: az acr login --name chatappacr
+
+      - name: Image-Tag bestimmen
+        id: meta
+        run: echo "image_tag=${GITHUB_SHA::8}-dev" >> $GITHUB_OUTPUT
+
+      - name: Docker Build & Push (Dev)
+        run: |
+          docker build \
+            -f Dockerfile.web \
+            --build-arg NEXT_PUBLIC_CHAT_API_URL="${{ secrets.CHAT_API_URL_DEV }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_CLIENT_ID="${{ secrets.WEB_ENTRA_CLIENT_ID_DEV }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_TENANT_ID="${{ secrets.ENTRA_TENANT_ID_DEV }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_AUTHORITY="${{ secrets.WEB_ENTRA_AUTHORITY_DEV }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_REDIRECT_URI="${{ secrets.CHAT_WEB_URL_DEV }}" \
+            --build-arg NEXT_PUBLIC_CHAT_API_SCOPE="${{ secrets.WEB_ENTRA_SCOPE_DEV }}" \
+            --build-arg NEXT_PUBLIC_ENABLE_VIDEO_CALL="true" \
+            --build-arg NODE_ENV="production" \
+            -t chatappacr.azurecr.io/chat-web:${{ steps.meta.outputs.image_tag }} \
+            .
+          docker push chatappacr.azurecr.io/chat-web:${{ steps.meta.outputs.image_tag }}
+
+  deploy-dev:
+    name: Deploy → Dev
+    needs: build-dev
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Neue Revision deployen
+        run: |
+          az containerapp update \
+            --name ca-trainbb-chat-web-dev \
+            --resource-group rg-trainbb-chat-app-dev \
+            --image chatappacr.azurecr.io/chat-web:${{ needs.build-dev.outputs.image_tag }}
+
+  build-and-deploy-test:
+    name: Build & Deploy → Test
+    runs-on: ubuntu-latest
+    environment: test
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'test')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Bei ACR anmelden
+        run: az acr login --name chatappacr
+
+      - name: Image-Tag bestimmen
+        id: meta
+        run: echo "image_tag=${GITHUB_SHA::8}-test" >> $GITHUB_OUTPUT
+
+      - name: Docker Build & Push (Test)
+        run: |
+          docker build -f Dockerfile.web \
+            --build-arg NEXT_PUBLIC_CHAT_API_URL="${{ secrets.CHAT_API_URL_TEST }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_CLIENT_ID="${{ secrets.WEB_ENTRA_CLIENT_ID_TEST }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_TENANT_ID="${{ secrets.ENTRA_TENANT_ID_TEST }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_AUTHORITY="${{ secrets.WEB_ENTRA_AUTHORITY_TEST }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_REDIRECT_URI="${{ secrets.CHAT_WEB_URL_TEST }}" \
+            --build-arg NEXT_PUBLIC_CHAT_API_SCOPE="${{ secrets.WEB_ENTRA_SCOPE_TEST }}" \
+            --build-arg NEXT_PUBLIC_ENABLE_VIDEO_CALL="true" \
+            --build-arg NODE_ENV="production" \
+            -t chatappacr.azurecr.io/chat-web:${{ steps.meta.outputs.image_tag }} .
+          docker push chatappacr.azurecr.io/chat-web:${{ steps.meta.outputs.image_tag }}
+
+      - name: Neue Revision deployen
+        run: |
+          az containerapp update \
+            --name ca-trainbb-chat-web-test \
+            --resource-group rg-trainbb-chat-app-test \
+            --image chatappacr.azurecr.io/chat-web:${{ steps.meta.outputs.image_tag }}
+
+  build-and-deploy-prod:
+    name: Build & Deploy → Prod
+    runs-on: ubuntu-latest
+    environment: prod
+    needs: build-and-deploy-test
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Bei ACR anmelden
+        run: az acr login --name chatappacr
+
+      - name: Image-Tag bestimmen
+        id: meta
+        run: echo "image_tag=${GITHUB_SHA::8}-prod" >> $GITHUB_OUTPUT
+
+      - name: Docker Build & Push (Prod)
+        run: |
+          docker build -f Dockerfile.web \
+            --build-arg NEXT_PUBLIC_CHAT_API_URL="${{ secrets.CHAT_API_URL_PROD }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_CLIENT_ID="${{ secrets.WEB_ENTRA_CLIENT_ID_PROD }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_TENANT_ID="${{ secrets.ENTRA_TENANT_ID_PROD }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_AUTHORITY="${{ secrets.WEB_ENTRA_AUTHORITY_PROD }}" \
+            --build-arg NEXT_PUBLIC_ENTRA_REDIRECT_URI="${{ secrets.CHAT_WEB_URL_PROD }}" \
+            --build-arg NEXT_PUBLIC_CHAT_API_SCOPE="${{ secrets.WEB_ENTRA_SCOPE_PROD }}" \
+            --build-arg NEXT_PUBLIC_ENABLE_VIDEO_CALL="true" \
+            --build-arg NODE_ENV="production" \
+            -t chatappacr.azurecr.io/chat-web:${{ steps.meta.outputs.image_tag }} \
+            -t chatappacr.azurecr.io/chat-web:stable \
+            .
+          docker push chatappacr.azurecr.io/chat-web:${{ steps.meta.outputs.image_tag }}
+          docker push chatappacr.azurecr.io/chat-web:stable
+
+      - name: Neue Revision deployen
+        run: |
+          az containerapp update \
+            --name ca-trainbb-chat-web-prod \
+            --resource-group rg-trainbb-chat-app-prod \
+            --image chatappacr.azurecr.io/chat-web:${{ steps.meta.outputs.image_tag }}

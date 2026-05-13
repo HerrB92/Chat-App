@@ -1,0 +1,14 @@
+# Test-Umgebung — separate App Registrations aus AZURE_SETUP.md Schritt 3
+subscription_id            = ""   # REQUIRED
+acr_login_server           = "chatappacr.azurecr.io"
+acr_id                     = ""   # REQUIRED: bootstrap output
+log_analytics_workspace_id = ""   # REQUIRED: bootstrap output
+github_sp_object_id        = ""   # REQUIRED: AZURE_SETUP.md Schritt 4b
+entra_tenant_id            = ""   # REQUIRED: Tenant ID
+entra_audience             = ""   # REQUIRED: Client ID chat-app-api-test
+entra_issuer               = ""   # REQUIRED
+entra_jwks_uri             = ""   # REQUIRED
+web_entra_client_id        = ""   # REQUIRED: Client ID chat-app-web-test
+web_entra_authority        = ""   # REQUIRED
+web_entra_scope            = ""   # REQUIRED: api://chat-app-api-test/Chat.Access
+cosmos_enable_free_tier    = false  # Free Tier nur für dev
