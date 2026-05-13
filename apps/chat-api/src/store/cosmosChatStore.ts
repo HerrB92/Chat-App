@@ -1,4 +1,5 @@
 import { CosmosClient, Database, Container } from "@azure/cosmos";
+import { DefaultAzureCredential } from "@azure/identity";
 import crypto from "crypto";
 import { buildMembershipId } from "../../../../packages/shared/src/chatTypes";
 
@@ -112,9 +113,9 @@ export class CosmosChatStore {
       key = keyMatch ? keyMatch[1].trim() : "";
     }
 
-    if (!endpoint || !key) {
+    if (!endpoint) {
       throw new Error(
-        "Cosmos config missing. Set COSMOS_CONNECTION_STRING or COSMOS_ENDPOINT + COSMOS_KEY."
+        "Cosmos config missing. Set COSMOS_CONNECTION_STRING or COSMOS_ENDPOINT (with COSMOS_KEY for key-based auth, or without for Managed Identity)."
       );
     }
 
@@ -126,11 +127,9 @@ export class CosmosChatStore {
       memberships: config.membershipsContainerId || "room_memberships"
     };
 
-    this.client = new CosmosClient({
-      endpoint,
-      key,
-      consistencyLevel: "Session"
-    });
+    this.client = key
+      ? new CosmosClient({ endpoint, key, consistencyLevel: "Session" })
+      : new CosmosClient({ endpoint, aadCredentials: new DefaultAzureCredential(), consistencyLevel: "Session" });
 
     this.rooms = new Map();
     this.membershipsByRoom = new Map();

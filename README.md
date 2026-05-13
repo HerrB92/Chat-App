@@ -64,6 +64,7 @@ Create **two** app registrations.
   - Platform: `Single-page application`
   - Redirect URI: `http://localhost:3000`
 - Copy `Application (client) ID` → `NEXT_PUBLIC_ENTRA_CLIENT_ID`
+- Owners -> Add your account as owner (to see the app registration by default & for the next step)
 
 ### B. API app registration (backend resource)
 
@@ -76,13 +77,13 @@ Configuration:
 2. `Expose an API`
     1. `Add` (Gets you the `Application ID URI` (example: `api://<API_APP_CLIENT_ID>`) api://2acccc44-b27c-4f53-b181-359331eb6c0f)
     2. `Save`
-    4. `Add a scope`:
+    3. `Add a scope`:
         1. Scope name: `Chat.Access` (full scope value example: `api://<API_APP_CLIENT_ID>/Chat.Access`)
         2. Who can consent? `Admins only`
         3. Admin consent display name: `Chat App: Access`
         4. Admin consent description: `Allows to access the chat app backend`
         5. State: Enabled
-    5. `Add a client application`:
+    4. `Add a client application`:
         1. Client ID: Application (client) ID from above
         2. Authorized scopes: Enable access for ...Chat.Access
 3. Finish the registration
@@ -90,16 +91,17 @@ Configuration:
     1. `App roles` -> `Create App Role`
     2. Teams.Edit
         1. Display name: Teams.Edit
-        2. Allowed member types: Users/Groups
+        2. Allowed member types: Users/Groups & Applications
         3. Value: Teams.Edit
         4. Description: Create, edit & delete own teams
         5. Enable
     3. Teams.Edit.All:
-        1. Display name: Teams.Edit.All
-        2. Allowed member types: Users/Groups
+        1. Display name: Te<ams.Edit.All
+        2. Allowed member types: Users/Groups & Applications
         3. Value: Teams.Edit.All
         4. Description: Create, edit & delete any team
         5. Enable
+5. Owners -> Add your account as owner (to see the app registration by default & for the next step)
 
 Now or later: Assign relevant roles to the user accounts:
 1. Open Entra ID

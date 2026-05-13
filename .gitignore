@@ -6,3 +6,13 @@ out
 apps/web/out
 .env.local
 .env
+
+# Terraform — sensible Werte niemals einchecken
+infra/**/*.tfvars
+!infra/**/*.tfvars.example
+infra/**/.terraform/
+infra/**/.terraform.lock.hcl
+infra/**/tfplan
+infra/**/plan.txt
+infra/**/*.tfstate
+infra/**/*.tfstate.backup

@@ -1,0 +1,3 @@
+# AZURE_SETUP.md Schritt 1: Werte aus "az account show" eintragen
+subscription_id = ""   # REQUIRED: az account show --query id -o tsv
+location        = "swedencentral"

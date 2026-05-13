@@ -1,0 +1,36 @@
+# Copy this file to terraform.tfvars and fill in all REQUIRED fields.
+# terraform.tfvars is gitignored — never commit it!
+
+# ── Azure ─────────────────────────────────────────────────────────────────────
+subscription_id = ""   # REQUIRED: az account show --query id -o tsv
+
+# ── Shared resources (from "terraform output" in infra/bootstrap) ─────────────
+acr_login_server           = "chatappacr.azurecr.io"   # bootstrap output: acr_login_server
+acr_id                     = ""                         # REQUIRED: bootstrap output: acr_id
+log_analytics_workspace_id = ""                         # REQUIRED: bootstrap output: log_analytics_workspace_id
+
+# ── GitHub Actions Service Principal ─────────────────────────────────────────
+github_sp_object_id = ""   # REQUIRED: see AZURE_SETUP.md Step 4b
+
+# ── Entra ID (see AZURE_SETUP.md Step 3) ─────────────────────────────────────
+entra_tenant_id = ""   # REQUIRED: Directory (tenant) ID
+entra_audience  = ""   # REQUIRED: Client ID of the backend app (chat-app-api-dev)
+# entra_issuer, entra_jwks_uri, and web_entra_authority are derived automatically
+# from entra_tenant_id — no need to set them here.
+
+# ── Frontend Entra (see AZURE_SETUP.md Step 3b) ───────────────────────────────
+web_entra_client_id = ""   # REQUIRED: Client ID of the frontend app (chat-app-web-dev)
+web_entra_scope     = ""   # REQUIRED: api://chat-app-api-dev/Chat.Access
+web_redirect_uri    = ""   # Set after first deploy — use the Container App URL
+
+# ── Cosmos DB ─────────────────────────────────────────────────────────────────
+# Free Tier: first 1000 RU/s + 25 GB free (max. 1 account per subscription — use for dev)
+cosmos_enable_free_tier = true
+
+# ── Shared Azure AI services (train_rsrc_foundry_swe) ────────────────────────
+# Defaults are pre-configured in variables.tf — only uncomment to override.
+# openai_account_name      = "train-bb-ai-services"
+# openai_resource_group    = "train_rsrc_foundry_swe"
+# openai_chat_deployment   = "gpt-5.3-chat"
+# openai_action_deployment = "gpt-5.4-nano"
+# openai_image_deployment  = "gpt-image-2"   # rate-limited: 2 req/min
